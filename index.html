@@ -763,17 +763,18 @@
     
     .visible-date-picker {
       border: 1px solid #e5e7eb;
-      border-radius: 0 8px 8px 0;
+      border-radius: 8px;
       padding: 0.875rem 1rem;
       font-size: 0.9rem;
       cursor: pointer;
       background: white;
       transition: all 0.2s;
-      min-width: 150px;
+      min-width: 180px;
     }
     
     .visible-date-picker:hover {
       background: #f9fafb;
+      border-color: #cbd5e1;
     }
     
     .visible-date-picker:focus {
@@ -3460,15 +3461,9 @@
           <input type="text" id="inventorySearchInput" placeholder="Search products...">
         </div>
 
-        <!-- Navigation: Calendar Picker and Prev/Next Buttons -->
+        <!-- Navigation: Date Picker and Prev/Next Buttons -->
         <div class="inventory-navigation">
-          <div class="calendar-picker-group">
-            <button class="calendar-btn" id="calendarPickerBtn">
-              <span>Calendar</span>
-              <span class="calendar-icon">📅</span>
-            </button>
-            <input type="date" id="visibleDatePicker" class="visible-date-picker">
-          </div>
+          <input type="date" id="visibleDatePicker" class="visible-date-picker">
           <div class="nav-arrows-group">
             <button class="nav-arrow-btn" id="prevDayBtn">&lt;</button>
             <button class="nav-arrow-btn" id="nextDayBtn">&gt;</button>
@@ -6448,7 +6443,6 @@
     }
     
     // Calendar picker button
-    const calendarPickerBtn = document.getElementById('calendarPickerBtn');
     const visibleDatePicker = document.getElementById('visibleDatePicker');
     
     // Setup visible date picker
@@ -6456,85 +6450,10 @@
       visibleDatePicker.value = currentSelectedDate.toISOString().split('T')[0];
       
       visibleDatePicker.addEventListener('change', (e) => {
-        console.log('Visible date picker changed:', e.target.value);
+        console.log('Date picker changed:', e.target.value);
         currentSelectedDate = new Date(e.target.value + 'T00:00:00');
         updateInventoryDateDisplay();
         renderInventoryProducts();
-      });
-    }
-    
-    if (calendarPickerBtn && datePickerInput) {
-      console.log('Calendar picker button found, adding click handler');
-      
-      calendarPickerBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        console.log('📅 Calendar button clicked!');
-        
-        // Check if calendar is already visible
-        const isVisible = datePickerInput.style.position === 'absolute';
-        
-        if (isVisible) {
-          // Hide it
-          datePickerInput.style.position = 'fixed';
-          datePickerInput.style.top = '-9999px';
-          datePickerInput.style.left = '-9999px';
-          datePickerInput.style.opacity = '0';
-          datePickerInput.style.width = '1px';
-          datePickerInput.style.height = '1px';
-          datePickerInput.style.zIndex = '-1';
-        } else {
-          // Show it
-          const rect = calendarPickerBtn.getBoundingClientRect();
-          datePickerInput.style.position = 'fixed';
-          datePickerInput.style.top = (rect.bottom + 5) + 'px';
-          datePickerInput.style.left = rect.left + 'px';
-          datePickerInput.style.opacity = '1';
-          datePickerInput.style.width = 'auto';
-          datePickerInput.style.height = 'auto';
-          datePickerInput.style.zIndex = '9999';
-          datePickerInput.style.border = '2px solid #2563eb';
-          datePickerInput.style.borderRadius = '8px';
-          datePickerInput.style.padding = '8px';
-          datePickerInput.style.background = 'white';
-          datePickerInput.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-          datePickerInput.style.cursor = 'pointer';
-          
-          // Set current value
-          datePickerInput.value = currentSelectedDate.toISOString().split('T')[0];
-          
-          // Open the picker
-          setTimeout(() => {
-            datePickerInput.focus();
-            if (datePickerInput.showPicker) {
-              try {
-                datePickerInput.showPicker();
-              } catch(err) {
-                console.log('showPicker not available');
-              }
-            }
-          }, 10);
-        }
-        
-        console.log('Date picker toggled');
-      });
-      
-      // Close when clicking outside
-      document.addEventListener('click', (e) => {
-        if (e.target !== calendarPickerBtn && e.target !== datePickerInput) {
-          datePickerInput.style.position = 'fixed';
-          datePickerInput.style.top = '-9999px';
-          datePickerInput.style.left = '-9999px';
-          datePickerInput.style.opacity = '0';
-          datePickerInput.style.width = '1px';
-          datePickerInput.style.height = '1px';
-          datePickerInput.style.zIndex = '-1';
-        }
-      });
-    } else {
-      console.error('Calendar picker button or date input not found!', {
-        calendarPickerBtn,
-        datePickerInput
       });
     }
     
