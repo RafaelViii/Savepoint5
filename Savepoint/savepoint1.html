@@ -6604,7 +6604,6 @@
     
     // Delete password
     const DELETE_PASSWORD = 'admin123'; // Change this to your desired password
-    const MANUAL_UPDATE_PASSWORD = 'admin123'; // Password for manual inventory update access
     
     let currentRestockFilter = 'all';
     let currentRestockSearch = '';
@@ -6653,9 +6652,6 @@
         initializeRestockData();
         renderRestockItems();
         setupDeleteButton(); // Setup delete button when page opens
-        
-        // Scroll to top
-        window.scrollTo(0, 0);
       });
     }
     
@@ -6936,32 +6932,9 @@
     // Navigate to manual update page
     if (goToManualUpdateBtn) {
       goToManualUpdateBtn.addEventListener('click', () => {
-        // Request password before opening
-        const password = prompt('🔒 Enter password to access Manual Inventory Update:\n\n(This action will be logged for tracking purposes)');
-        
-        if (password === null) {
-          // User cancelled
-          console.log('Manual update access cancelled by user');
-          return;
-        }
-        
-        if (password !== MANUAL_UPDATE_PASSWORD) {
-          alert('❌ Incorrect password! Access denied.');
-          console.log('Failed manual update access attempt - wrong password');
-          return;
-        }
-        
-        // Password correct - log and open
-        const timestamp = new Date().toLocaleString();
-        console.log(`✅ Manual Inventory Update accessed at ${timestamp}`);
-        console.log('User authenticated successfully');
-        
         inventoryPage.classList.remove('active');
         manualUpdatePage.style.display = 'block';
         renderManualUpdateList();
-        
-        // Scroll to top
-        window.scrollTo(0, 0);
       });
     }
     
