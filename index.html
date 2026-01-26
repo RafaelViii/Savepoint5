@@ -1019,6 +1019,45 @@
       font-weight: 700;
     }
     
+    /* Restock Search and Filter */
+    .restock-search-filter {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .restock-search-input {
+      flex: 2;
+      padding: 0.875rem 1rem;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+    
+    .restock-search-input:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+    
+    .restock-category-filter {
+      flex: 1;
+      padding: 0.875rem 1rem;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      background: white;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .restock-category-filter:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+    
     /* Restock Filters */
     .restock-filters {
       display: flex;
@@ -1247,20 +1286,26 @@
     }
     
     .btn-delete-selected {
-      padding: 1rem;
+      padding: 1rem 1.5rem;
       background: #dc2626;
       color: white;
       border: none;
       border-radius: 8px;
-      font-size: 1.25rem;
-      font-weight: 600;
+      font-size: 1.75rem;
+      font-weight: 700;
       cursor: pointer;
-      transition: background 0.2s;
-      min-width: 60px;
+      transition: all 0.2s;
+      min-width: 70px;
+      line-height: 1;
     }
     
     .btn-delete-selected:hover {
       background: #b91c1c;
+      transform: scale(1.05);
+    }
+    
+    .btn-delete-selected:active {
+      transform: scale(0.95);
     }
     
     .btn-update-stocks {
@@ -1290,6 +1335,24 @@
     @media (max-width: 768px) {
       .restock-page {
         padding: 1rem;
+      }
+      
+      /* Make search and filter stack on mobile */
+      .restock-search-filter {
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      
+      .restock-search-input {
+        width: 100%;
+        font-size: 0.85rem;
+        padding: 0.75rem;
+      }
+      
+      .restock-category-filter {
+        width: 100%;
+        font-size: 0.85rem;
+        padding: 0.75rem;
       }
       
       .restock-card-body {
@@ -3498,8 +3561,8 @@
 
         <!-- Restock Button -->
         <div class="restock-button-container">
-          <button id="goToRestockBtn" class="btn-restock">Restock Checklist</button>
-          <button id="goToManualUpdateBtn" class="btn-manual-update">Manual Inventory Update</button>
+          <button id="goToRestockBtn" class="btn-restock">📦 Restock Checklist</button>
+          <button id="goToManualUpdateBtn" class="btn-manual-update">✏️ Manual Inventory Update</button>
         </div>
 
         <!-- Hidden date picker for popup -->
@@ -3511,6 +3574,15 @@
         <div class="restock-header">
           <h2>Restock Checklist</h2>
           <button id="backFromRestockBtn" class="btn-back">← Back to Inventory</button>
+        </div>
+
+        <!-- Search and Category Filter -->
+        <div class="restock-search-filter">
+          <input type="text" id="restockSearchInput" class="restock-search-input" placeholder="🔍 Search products...">
+          <select id="restockCategoryFilter" class="restock-category-filter">
+            <option value="all">All Categories</option>
+            <!-- Categories will be populated dynamically -->
+          </select>
         </div>
 
         <!-- Filter Tabs -->
@@ -3527,7 +3599,7 @@
 
         <!-- Bottom Actions -->
         <div class="restock-actions">
-          <button id="deleteSelectedBtn" class="btn-delete-selected">🗑️</button>
+          <button id="deleteSelectedBtn" class="btn-delete-selected">✕</button>
           <button id="updateStocksBtn" class="btn-update-stocks">
             ✓ Update Stocks <span id="updateCounter">(0)</span>
           </button>
@@ -3554,7 +3626,7 @@
 
         <!-- Save Button -->
         <div class="manual-update-save-container">
-          <button id="saveManualUpdatesBtn" class="btn-save-manual-updates">Save All Changes</button>
+          <button id="saveManualUpdatesBtn" class="btn-save-manual-updates">💾 Save All Changes</button>
         </div>
       </div>
 
@@ -3562,7 +3634,7 @@
       <div class="page" id="trial">
         <div class="patient-list-header">
           <h2>Laboratory Logbook</h2>
-          <button class="btn-manage-lab-types" id="manageLabTypesBtn">Manage Lab Types</button>
+          <button class="btn-manage-lab-types" id="manageLabTypesBtn">⚙️ Manage Lab Types</button>
         </div>
 
         <!-- Add Patient Form -->
@@ -4534,8 +4606,7 @@
             product: productNameVal.trim(),
             category: productCategoryVal,
             expiry: productExpiryVal,
-            qty: parseInt(productQtyVal) || 0,
-            status: productStatusVal,
+            stock: parseInt(productQtyVal) || 0,  // Use 'stock' not 'qty'
             dateAdded: productDateVal
           };
           
@@ -6528,8 +6599,15 @@
     const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
     const updateStocksBtn = document.getElementById('updateStocksBtn');
     const updateCounter = document.getElementById('updateCounter');
+    const restockSearchInput = document.getElementById('restockSearchInput');
+    const restockCategoryFilter = document.getElementById('restockCategoryFilter');
+    
+    // Delete password
+    const DELETE_PASSWORD = 'admin123'; // Change this to your desired password
     
     let currentRestockFilter = 'all';
+    let currentRestockSearch = '';
+    let currentRestockCategory = 'all';
     let restockData = [];
     
     // Initialize restock data from products
@@ -6545,6 +6623,25 @@
         newStockQty: 0,
         checked: false
       }));
+      
+      // Populate category filter
+      populateRestockCategoryFilter();
+    }
+    
+    // Populate category filter dropdown
+    function populateRestockCategoryFilter() {
+      if (!restockCategoryFilter) return;
+      
+      // Get unique categories from restockData
+      const categories = [...new Set(restockData.map(item => item.category))].sort();
+      
+      restockCategoryFilter.innerHTML = '<option value="all">All Categories</option>';
+      categories.forEach(category => {
+        const option = document.createElement('option');
+        option.value = category;
+        option.textContent = category;
+        restockCategoryFilter.appendChild(option);
+      });
     }
     
     // Navigate to restock page
@@ -6554,6 +6651,7 @@
         restockPage.style.display = 'block';
         initializeRestockData();
         renderRestockItems();
+        setupDeleteButton(); // Setup delete button when page opens
       });
     }
     
@@ -6575,20 +6673,51 @@
       });
     });
     
+    // Search input
+    if (restockSearchInput) {
+      restockSearchInput.addEventListener('input', (e) => {
+        currentRestockSearch = e.target.value;
+        renderRestockItems();
+      });
+    }
+    
+    // Category filter
+    if (restockCategoryFilter) {
+      restockCategoryFilter.addEventListener('change', (e) => {
+        currentRestockCategory = e.target.value;
+        renderRestockItems();
+      });
+    }
+    
     // Render restock items
     function renderRestockItems() {
       let filtered = restockData;
       
-      // Apply filter
+      // Apply stock status filter
       if (currentRestockFilter === 'low') {
-        filtered = restockData.filter(item => item.status === 'low');
+        filtered = filtered.filter(item => item.status === 'low');
       } else if (currentRestockFilter === 'out') {
-        filtered = restockData.filter(item => item.status === 'out');
+        filtered = filtered.filter(item => item.status === 'out');
+      }
+      
+      // Apply search filter
+      if (currentRestockSearch) {
+        filtered = filtered.filter(item => 
+          item.product.toLowerCase().includes(currentRestockSearch.toLowerCase())
+        );
+      }
+      
+      // Apply category filter
+      if (currentRestockCategory !== 'all') {
+        filtered = filtered.filter(item => item.category === currentRestockCategory);
       }
       
       let html = '';
       
-      filtered.forEach((item, index) => {
+      if (filtered.length === 0) {
+        html = '<div style="text-align: center; padding: 3rem; color: #9ca3af;">No items found matching your filters.</div>';
+      } else {
+        filtered.forEach((item, index) => {
         const actualIndex = restockData.indexOf(item);
         const statusClass = item.status === 'low' ? 'low' : item.status === 'out' ? 'out' : '';
         const statusText = item.status === 'low' ? 'Low Stock' : item.status === 'out' ? 'Out of Stock' : 'Normal';
@@ -6605,7 +6734,6 @@
               </div>
               <div class="restock-checkbox-delete">
                 <input type="checkbox" class="restock-checkbox" data-index="${actualIndex}" ${item.checked ? 'checked' : ''}>
-                <button class="btn-delete-card" data-index="${actualIndex}">🗑️</button>
               </div>
             </div>
             
@@ -6645,9 +6773,10 @@
             </div>
           </div>
         `;
-      });
+        });
+      }
       
-      restockItemsList.innerHTML = html || '<p style="text-align:center; padding:2rem; color:#9ca3af;">No items found</p>';
+      restockItemsList.innerHTML = html;
       
       // Add event listeners
       attachRestockEventListeners();
@@ -6662,17 +6791,6 @@
           const index = parseInt(e.target.dataset.index);
           restockData[index].checked = e.target.checked;
           renderRestockItems();
-        });
-      });
-      
-      // Delete card buttons
-      document.querySelectorAll('.btn-delete-card').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const index = parseInt(e.target.dataset.index);
-          if (confirm(`Delete ${restockData[index].product}?`)) {
-            restockData.splice(index, 1);
-            renderRestockItems();
-          }
         });
       });
       
@@ -6724,20 +6842,55 @@
       }
     }
     
-    // Delete selected items
-    if (deleteSelectedBtn) {
-      deleteSelectedBtn.addEventListener('click', () => {
+    // Setup delete button handler
+    function setupDeleteButton() {
+      const btn = document.getElementById('deleteSelectedBtn');
+      if (!btn) {
+        console.error('Delete button NOT found!');
+        return;
+      }
+      
+      console.log('Setting up delete button handler');
+      
+      // Remove any existing listeners by cloning
+      const newBtn = btn.cloneNode(true);
+      btn.parentNode.replaceChild(newBtn, btn);
+      
+      newBtn.addEventListener('click', () => {
+        console.log('✕ Delete button clicked!');
         const toDelete = restockData.filter(item => item.checked);
+        console.log('Items to delete:', toDelete.length);
+        
         if (toDelete.length === 0) {
-          alert('No items selected');
+          alert('⚠️ No items selected. Please check items first.');
           return;
         }
         
-        if (confirm(`Delete ${toDelete.length} selected item(s)?`)) {
+        // Request password
+        const password = prompt(`🔒 Enter password to delete ${toDelete.length} item(s):`);
+        
+        if (password === null) {
+          // User cancelled
+          console.log('User cancelled password prompt');
+          return;
+        }
+        
+        if (password !== DELETE_PASSWORD) {
+          alert('❌ Incorrect password! Deletion cancelled.');
+          console.log('Wrong password entered');
+          return;
+        }
+        
+        // Password correct, confirm deletion
+        if (confirm(`✅ Password accepted. Delete ${toDelete.length} selected item(s)?`)) {
           restockData = restockData.filter(item => !item.checked);
           renderRestockItems();
+          alert(`✓ ${toDelete.length} item(s) deleted successfully!`);
+          console.log('Items deleted successfully');
         }
       });
+      
+      console.log('Delete button handler attached successfully');
     }
     
     // Update stocks
