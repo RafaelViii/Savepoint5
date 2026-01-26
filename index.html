@@ -852,6 +852,11 @@
       background: #f9fafb;
     }
     
+    /* Category separator - grey spacer row */
+    .inventory-products-table tbody tr.category-separator:hover {
+      background: transparent;
+    }
+    
     .inventory-products-table tbody tr:last-child td {
       border-bottom: none;
     }
@@ -4673,20 +4678,7 @@
     }
 
     // === DASHBOARD INITIALIZATION ===
-    // Initialize dashboard with today's data on page load
-    console.log('=== INITIALIZING DASHBOARD ===');
-    
-    if (typeof updateDashboardOverview === 'function') {
-      console.log('Loading dashboard overview...');
-      updateDashboardOverview();
-    }
-    
-    if (typeof updateDashboardData === 'function') {
-      console.log('Loading dashboard data for: today');
-      updateDashboardData('today');
-    }
-    
-    console.log('Dashboard initialized with TODAY view');
+    // Removed from here - moved to after productsMaster is defined
 
     // === INVENTORY SYSTEM === (OLD - DISABLED)
     // Wrap in check to prevent errors since we're using new system
@@ -4770,56 +4762,11 @@
     
     // Update dashboard inventory overview
     function updateDashboardOverview() {
-      const today = new Date();
-      let filteredItems = [];
-      
-      if (currentPeriod === 'today') {
-        const todayStr = today.toISOString().split('T')[0];
-        filteredItems = inventoryData.filter(item => item.date === todayStr);
-      } else if (currentPeriod === 'month') {
-        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
-        const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
-        filteredItems = inventoryData.filter(item => item.date >= monthStart && item.date <= monthEnd);
-      } else if (currentPeriod === 'year') {
-        const yearStart = new Date(today.getFullYear(), 0, 1).toISOString().split('T')[0];
-        const yearEnd = new Date(today.getFullYear(), 11, 31).toISOString().split('T')[0];
-        filteredItems = inventoryData.filter(item => item.date >= yearStart && item.date <= yearEnd);
+      // Dashboard inventory overview is now updated by updateStatusCounts()
+      // This function remains for compatibility with period buttons
+      if (typeof updateStatusCounts === 'function') {
+        updateStatusCounts();
       }
-      
-      const available = filteredItems.filter(item => item.status === 'Available');
-      const lowStock = filteredItems.filter(item => item.status === 'Low Stock');
-      const outStock = filteredItems.filter(item => item.status === 'Out of Stock');
-      
-      // Calculate expiring soon (items expiring within 30 days)
-      const expiringItems = filteredItems.filter(item => {
-        if (!item.batch) return false;
-        // Extract expiry date from batch (format: "XXX/YYYY-MM")
-        const parts = item.batch.split('/');
-        if (parts.length < 2) return false;
-        const expiryParts = parts[1].split('-');
-        if (expiryParts.length < 2) return false;
-        
-        const expiryYear = parseInt(expiryParts[0]);
-        const expiryMonth = parseInt(expiryParts[1]) - 1;
-        const expiryDate = new Date(expiryYear, expiryMonth, 1);
-        
-        const diffTime = expiryDate - today;
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
-        return diffDays <= 30 && diffDays >= 0;
-      });
-      
-      // Calculate totals
-      const availableQty = available.reduce((sum, item) => sum + item.qty, 0);
-      const lowStockQty = lowStock.reduce((sum, item) => sum + item.qty, 0);
-      const outStockQty = outStock.reduce((sum, item) => sum + item.qty, 0);
-      const expiringQty = expiringItems.reduce((sum, item) => sum + item.qty, 0);
-      
-      // Update counts
-      document.getElementById('dashAvailableCount').textContent = availableQty;
-      document.getElementById('dashLowStockCount').textContent = lowStockQty;
-      document.getElementById('dashOutStockCount').textContent = outStockQty;
-      document.getElementById('dashExpiringCount').textContent = expiringQty;
     }
     
     // Show stock detail modal
@@ -6330,8 +6277,19 @@
       
       // Build table HTML
       let html = '';
+      let lastCategory = '';
       
-      filtered.forEach(product => {
+      filtered.forEach((product, index) => {
+        // Add separator row when category changes (except for first item)
+        if (product.category !== lastCategory && lastCategory !== '') {
+          html += `
+            <tr class="category-separator">
+              <td colspan="5" style="background: #f3f4f6; height: 8px; padding: 0; border: none;"></td>
+            </tr>
+          `;
+        }
+        lastCategory = product.category;
+        
         // Get sales for today
         const salesToday = (salesByDate[currentDateStr] && salesByDate[currentDateStr][product.product]) || 0;
         const currentStock = product.stock || 0;
@@ -6377,19 +6335,59 @@
       let allCount = productsMaster.length; // Total items
       let lowCount = 0;
       let outCount = 0;
+      let availableCount = 0;
+      let expiringCount = 0;
+      
+      const today = new Date();
       
       productsMaster.forEach(product => {
         const stock = product.stock || 0;
+        
+        // Count by stock status
         if (stock === 0) {
           outCount++;
         } else if (stock < 20) {
           lowCount++;
+        } else {
+          availableCount++;
+        }
+        
+        // Check if expiring soon (within 90 days)
+        if (product.expiry) {
+          const expiryDate = new Date(product.expiry);
+          const diffTime = expiryDate - today;
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          
+          // Expiring within 90 days
+          if (diffDays <= 90 && diffDays >= 0) {
+            expiringCount++;
+          }
         }
       });
       
+      // Update inventory page status boxes
       if (allCountEl) allCountEl.textContent = allCount;
       if (lowCountEl) lowCountEl.textContent = lowCount;
       if (outCountEl) outCountEl.textContent = outCount;
+      
+      // Update dashboard inventory overview
+      const dashAvailableEl = document.getElementById('dashAvailableCount');
+      const dashLowStockEl = document.getElementById('dashLowStockCount');
+      const dashOutStockEl = document.getElementById('dashOutStockCount');
+      const dashExpiringEl = document.getElementById('dashExpiringCount');
+      
+      if (dashAvailableEl) dashAvailableEl.textContent = availableCount;
+      if (dashLowStockEl) dashLowStockEl.textContent = lowCount;
+      if (dashOutStockEl) dashOutStockEl.textContent = outCount;
+      if (dashExpiringEl) dashExpiringEl.textContent = expiringCount;
+      
+      console.log('Status counts updated (Inventory + Dashboard):', {
+        all: allCount,
+        available: availableCount,
+        lowStock: lowCount,
+        outStock: outCount,
+        expiring: expiringCount
+      });
     }
     
     // Status box click handlers
@@ -7124,6 +7122,21 @@
     renderPatientRecords();
     
     // END PATIENT LIST / LABORATORY LOGBOOK SYSTEM
+    
+    // === INITIALIZE DASHBOARD WITH REAL INVENTORY DATA ===
+    console.log('=== INITIALIZING DASHBOARD WITH REAL DATA ===');
+    
+    if (typeof updateDashboardOverview === 'function') {
+      console.log('Loading dashboard inventory overview...');
+      updateDashboardOverview();
+    }
+    
+    if (typeof updateDashboardData === 'function') {
+      console.log('Loading dashboard data for: today');
+      updateDashboardData('today');
+    }
+    
+    console.log('Dashboard initialized with real inventory counts');
     
     // Run initialization immediately
     initInventorySystem();
