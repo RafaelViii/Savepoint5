@@ -203,6 +203,7 @@ Settings
 
 
 
-
+other notes:
+Yung sa OT, it should be computed per hour and per minute depende sa daily rate ng staff
 
   -->
