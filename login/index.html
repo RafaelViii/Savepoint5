@@ -4,7 +4,33 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Login</title>
-    <link rel="stylesheet" href="renal-care-login.css" />
+  <link rel="stylesheet" href="renal-care-login.css" />
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-auth-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey:            "AIzaSyAy3V0HpECz611eo3gpVE50KjNC_BRo608",
+      authDomain:        "yepbro-e3468.firebaseapp.com",
+      projectId:         "yepbro-e3468",
+      storageBucket:     "yepbro-e3468.firebasestorage.app",
+      messagingSenderId: "616963714633",
+      appId:             "1:616963714633:web:ef2f7fa085c6e989f2d998",
+      measurementId:     "G-GG3N0299VE"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+
+    // If already logged in, skip straight to the dashboard
+    auth.onAuthStateChanged((user) => {
+      if (user) {
+        window.location.href = "../index.html";
+      }
+    });
+  </script>
 </head>
 <body>
 
@@ -18,23 +44,22 @@
   <!-- Right: Login form -->
   <div class="login-card">
     <div class="form-group">
-      <input type="text" id="username" placeholder="Enter username" />
+      <input type="email" id="username" placeholder="Enter email" />
     </div>
 
     <div class="form-group">
       <input type="password" id="password" placeholder="Enter password" />
     </div>
 
-    <button onclick="login()">Login</button>
+    <button onclick="login()" id="loginBtn">Login</button>
 
     <div class="forgot-pass">
       <p>Forgot password?</p>
     </div>
 
-    <div class="error" id="error">Invalid username or password</div>
+    <div class="error" id="error">Invalid email or password</div>
   </div>
 </div>
-
 
 
 <footer>
@@ -83,25 +108,45 @@
 </footer>
 
 
-
   <script>
-    function login() {
-      const username = document.getElementById('username').value;
-      const password = document.getElementById('password').value;
-      const error = document.getElementById('error');
+    async function login() {
+      const email    = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+      const error    = document.getElementById("error");
+      const btn      = document.getElementById("loginBtn");
 
-      // Demo credentials
-      const demoUser = 'admin';
-      const demoPass = '1234';
+      // Hide old error
+      error.style.display = "none";
 
-      if (username === demoUser && password === demoPass) {
-        window.location.href = 'index.html';
-        alert('Login successful');
-        error.style.display = 'none';
-      } else {
-        error.style.display = 'block';
+      // Basic validation
+      if (!email || !password) {
+        error.textContent   = "Please enter both email and password";
+        error.style.display = "block";
+        return;
+      }
+
+      // Disable button while signing in
+      btn.disabled     = true;
+      btn.textContent  = "Logging in...";
+
+      try {
+        await auth.signInWithEmailAndPassword(email, password);
+        // onAuthStateChanged will fire and redirect to ../index.html
+      } catch (e) {
+        // Re-enable button
+        btn.disabled    = false;
+        btn.textContent = "Login";
+
+        // Show a friendly message for any error
+        error.textContent   = "Invalid email or password";
+        error.style.display = "block";
       }
     }
+
+    // Allow pressing Enter to log in
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") login();
+    });
   </script>
 </body>
 </html>
