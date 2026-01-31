@@ -1,4 +1,4 @@
-# Savepoint5
+<!-- # Savepoint5
 YUNG INDEX yung working (savepoint.)
 
 YUNG index_slight_changes.html nagkaroon ng bug nung may binago ako ng konti sa html.  pero ito yung latest.
@@ -205,4 +205,4 @@ Settings
 
 
 
- 
+  -->
