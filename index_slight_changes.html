@@ -5,12 +5,240 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Accounting Dashboard</title>
   <link rel="stylesheet" href="styles.css"> 
+
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- SheetJS -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
- 
+
+  <!-- ── Firebase SDK (compat version) ── -->
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-analytics-compat.js"></script>
+
+  <script>
+    // ============================================================
+    // Firebase Init
+    // ============================================================
+    const firebaseConfig = {
+      apiKey:            "AIzaSyAy3V0HpECz611eo3gpVE50KjNC_BRo608",
+      authDomain:        "yepbro-e3468.firebaseapp.com",
+      projectId:         "yepbro-e3468",
+      storageBucket:     "yepbro-e3468.firebasestorage.app",
+      messagingSenderId: "616963714633",
+      appId:             "1:616963714633:web:ef2f7fa085c6e989f2d998",
+      measurementId:     "G-GG3N0299VE"
+    };
+
+    const firebaseApp = firebase.initializeApp(firebaseConfig);
+    const analytics    = firebase.analytics();
+    const db           = firebase.firestore();
+    const auth         = firebase.auth();
+
+    // ============================================================
+    // AUTH GUARD — if not logged in, go to login page
+    // ============================================================
+    let currentUser = null;
+
+    auth.onAuthStateChanged(async (firebaseUser) => {
+      if (!firebaseUser) {
+        // Not logged in → redirect to login
+        window.location.href = "login/index.html";
+        return;
+      }
+
+      // Fetch profile from Firestore
+      const snap = await db.collection("users").doc(firebaseUser.uid).get();
+      currentUser = snap.exists
+        ? { uid: firebaseUser.uid, ...snap.data() }
+        : { uid: firebaseUser.uid, email: firebaseUser.email, role: "nurse", name: firebaseUser.email };
+
+      // Update sidebar with real user info
+      updateSidebarProfile(currentUser);
+
+      // Show the app now that we confirmed auth
+      document.getElementById("appWrapper").style.display = "flex";
+    });
+
+    // ============================================================
+    // Role switching (updates Firestore)
+    // ============================================================
+    document.addEventListener('DOMContentLoaded', () => {
+      const roleSwitchBtns = document.querySelectorAll('.role-switch');
+      
+      roleSwitchBtns.forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!currentUser) return;
+          
+          const newRole = btn.getAttribute('data-role');
+          
+          try {
+            // Update Firestore
+            await updateDocument(COL.USERS, currentUser.uid, { role: newRole });
+            
+            // Update local state
+            currentUser.role = newRole;
+            
+            // Update sidebar UI
+            updateSidebarProfile(currentUser);
+            
+            // Close dropdown
+            document.getElementById('userDropdown').classList.remove('show');
+            
+            console.log(`✓ Role changed to: ${newRole}`);
+          } catch (e) {
+            console.error('Failed to update role:', e);
+          }
+        });
+      });
+    });
+
+    function updateSidebarProfile(user) {
+      const name    = user.name || user.email || "User";
+      const role    = user.role || "nurse";
+      const initials = name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+
+      document.getElementById("userName").textContent    = name;
+      document.getElementById("userRole").textContent    = role.charAt(0).toUpperCase() + role.slice(1);
+      document.getElementById("userInitials").textContent = initials;
+    }
+
+    // ============================================================
+    // Collection path constants
+    // ============================================================
+    const COL = {
+      CATEGORIES:     "config/categories",
+      LAB_TYPES:      "config/lab_types",
+      DEPARTMENTS:    "config/departments",
+      TIME_PRESETS:   "config/time_presets",
+      USERS:          "users",
+      PRODUCTS:       "products",
+      PRODUCT_SALES:  "product_sales",
+      PATIENTS:       "patients",
+      CHARGE_SLIPS:   "charge_slips",
+      SALES:          "sales",
+      LEAVE_REQUESTS: "leave_requests",
+      ATTENDANCE:     "attendance",
+      PAYROLL:        "payroll",
+      PRINT_QUEUE:    "print_queue"
+    };
+
+    // ============================================================
+    // Firestore helpers
+    // ============================================================
+    async function addDocument(collectionPath, data) {
+      return db.collection(collectionPath).add({
+        ...data,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+
+    async function setDocument(collectionPath, docId, data, options = {}) {
+      return db.collection(collectionPath).doc(docId).set(data, options);
+    }
+
+    async function getDocument(collectionPath, docId) {
+      const snap = await db.collection(collectionPath).doc(docId).get();
+      return snap.exists ? { id: snap.id, ...snap.data() } : null;
+    }
+
+    async function getDocuments(collectionPath, filters = []) {
+      let q = db.collection(collectionPath);
+      filters.forEach(([field, op, value]) => {
+        q = q.where(field, op, value);
+      });
+      const snap = await q.get();
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+
+    async function updateDocument(collectionPath, docId, data) {
+      return db.collection(collectionPath).doc(docId).update({
+        ...data,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+
+    async function removeDocument(collectionPath, docId) {
+      return db.collection(collectionPath).doc(docId).delete();
+    }
+
+    function listenCollection(collectionPath, callback, filters = []) {
+      let q = db.collection(collectionPath);
+      filters.forEach(([field, op, value]) => {
+        q = q.where(field, op, value);
+      });
+      return q.onSnapshot((snap) => {
+        callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      });
+    }
+
+    // ============================================================
+    // Logout function (wired to the sidebar button)
+    // ============================================================
+    async function logout() {
+      await auth.signOut();
+      // onAuthStateChanged will fire with null → redirects to login.html
+    }
+
+    // ============================================================
+    // Charge Slip atomic transaction
+    // ============================================================
+    async function saveChargeSlip(slipData, slipId) {
+      const total = slipData.items.reduce(
+        (sum, item) => sum + item.quantity * item.unitPrice, 0
+      );
+
+      const serverTS  = firebase.firestore.FieldValue.serverTimestamp();
+      const increment = firebase.firestore.FieldValue.increment;
+
+      await db.runTransaction(async (tx) => {
+        tx.set(db.collection(COL.CHARGE_SLIPS).doc(slipId), {
+          ...slipData, total, status: "saved", createdAt: serverTS
+        });
+
+        tx.set(db.collection(COL.SALES).doc(slipId), {
+          receiptId:   slipId,
+          patientName: slipData.patientName,
+          nurseId:     slipData.nurseId,
+          nurseName:   slipData.nurseName,
+          date:        slipData.date,
+          total,
+          itemCount:   slipData.items.reduce((s, i) => s + i.quantity, 0),
+          items:       slipData.items,
+          createdAt:   serverTS
+        });
+
+        slipData.items.forEach((item) => {
+          tx.update(db.collection(COL.PRODUCTS).doc(item.productId), {
+            currentStock: increment(-item.quantity),
+            updatedAt:    serverTS
+          });
+
+          const salesDocId = `${item.productId}_${slipData.date}`;
+          tx.set(db.collection(COL.PRODUCT_SALES).doc(salesDocId), {
+            productId:   item.productId,
+            productName: item.productName,
+            date:        slipData.date,
+            soldBy:      slipData.nurseId,
+            receiptId:   slipId,
+            quantity:    increment(item.quantity),
+            createdAt:   serverTS
+          }, { merge: true });
+        });
+      });
+    }
+  </script>
 </head>
 <body>
-  <div class="app">
+
+  <!-- ============================================================
+       AUTH GUARD WRAPPER
+       Hidden by default. Shown only AFTER auth confirms login.
+       This prevents the app from flashing for a second before redirect.
+       ============================================================ -->
+  <div id="appWrapper" style="display: none;" class="app">
+
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <h2>
@@ -73,7 +301,8 @@
             </button>
           </div>
           <div class="dropdown-divider"></div>
-          <button class="dropdown-item logout-btn">
+          <!-- Logout button now calls logout() -->
+          <button class="dropdown-item logout-btn" onclick="logout()">
             <span class="logout-icon">🚪</span>
             <span>Logout</span>
           </button>
@@ -94,7 +323,6 @@
           </div>
         </header>
 
-        <!-- Inventory Overview Section -->
         <div class="inventory-overview-section">
           <div class="section-header">
             <h3 class="section-title">Inventory Status</h3>
@@ -112,21 +340,18 @@
                 <div class="overview-value" id="dashAvailableCount">0</div>
               </div>
             </div>
-            
             <div class="overview-card low-stock-card" data-status="Low Stock">
               <div class="overview-content">
                 <div class="overview-label">Low Stock</div>
                 <div class="overview-value" id="dashLowStockCount">0</div>
               </div>
             </div>
-            
             <div class="overview-card out-stock-card" data-status="Out of Stock">
               <div class="overview-content">
                 <div class="overview-label">Out of Stock</div>
                 <div class="overview-value" id="dashOutStockCount">0</div>
               </div>
             </div>
-            
             <div class="overview-card expiring-card" data-status="Expiring Soon">
               <div class="overview-content">
                 <div class="overview-label">Expiring Soon</div>
@@ -177,13 +402,11 @@
 
       <!-- === INVENTORY PAGE === -->
       <div class="page" id="inventory">
-        <!-- Header with Title and Current Date -->
         <div class="inventory-new-header">
           <h2>Inventory<br>Management</h2>
           <div class="current-date-badge" id="inventoryCurrentDate">January 24, 2026</div>
         </div>
 
-        <!-- Four Box Grid (2x2) -->
         <div class="inventory-status-grid">
           <div class="status-box available active" data-status="all">
             <div class="status-label">All</div>
@@ -203,12 +426,10 @@
           </div>
         </div>
 
-        <!-- Search Bar -->
         <div class="inventory-search-bar">
           <input type="text" id="inventorySearchInput" placeholder="Search products...">
         </div>
 
-        <!-- Navigation: Date Picker and Prev/Next Buttons -->
         <div class="inventory-navigation">
           <input type="date" id="visibleDatePicker" class="visible-date-picker">
           <div class="nav-arrows-group">
@@ -216,11 +437,9 @@
             <button class="nav-arrow-btn" id="nextDayBtn">&gt;</button>
           </div>
         </div>
-        
-        <!-- Hidden date picker for popup -->
+
         <input type="date" id="datePickerInput" class="hidden-date-picker">
 
-        <!-- Products Table -->
         <div class="inventory-products-table">
           <table>
             <thead>
@@ -232,20 +451,14 @@
                 <th>Sales</th>
               </tr>
             </thead>
-            <tbody id="inventoryProductsBody">
-              <!-- Products will be inserted here by JavaScript -->
-            </tbody>
+            <tbody id="inventoryProductsBody"></tbody>
           </table>
         </div>
 
-        <!-- Restock Button -->
         <div class="restock-button-container">
           <button id="goToRestockBtn" class="btn-restock">📦 Restock Checklist</button>
           <button id="goToManualUpdateBtn" class="btn-manual-update">✏️ Manual Inventory Update</button>
         </div>
-
-        <!-- Hidden date picker for popup -->
-        <input type="date" id="datePickerInput" class="hidden-date-picker">
       </div>
 
       <!-- === RESTOCK CHECKLIST PAGE === -->
@@ -254,29 +467,18 @@
           <h2>Restock Checklist</h2>
           <button id="backFromRestockBtn" class="btn-back">← Back to Inventory</button>
         </div>
-
-        <!-- Search and Category Filter -->
         <div class="restock-search-filter">
           <input type="text" id="restockSearchInput" class="restock-search-input" placeholder="🔍 Search products...">
           <select id="restockCategoryFilter" class="restock-category-filter">
             <option value="all">All Categories</option>
-            <!-- Categories will be populated dynamically -->
           </select>
         </div>
-
-        <!-- Filter Tabs -->
         <div class="restock-filters">
           <button class="restock-filter-btn active" data-filter="all">All</button>
           <button class="restock-filter-btn" data-filter="low">Low Stock</button>
           <button class="restock-filter-btn" data-filter="out">Out of Stock</button>
         </div>
-
-        <!-- Restock Items List -->
-        <div id="restockItemsList" class="restock-items-list">
-          <!-- Cards will be inserted here -->
-        </div>
-
-        <!-- Bottom Actions -->
+        <div id="restockItemsList" class="restock-items-list"></div>
         <div class="restock-actions">
           <button id="deleteSelectedBtn" class="btn-delete-selected">✕</button>
           <button id="updateStocksBtn" class="btn-update-stocks">
@@ -288,31 +490,20 @@
       <!-- === MANUAL INVENTORY UPDATE PAGE === -->
       <div class="manual-update-page" id="manualUpdatePage" style="display: none;">
         <div class="manual-update-header">
-        <h2>Manual Inventory Update</h2>
-        <button id="backFromManualUpdateBtn" class="btn-back">← Back to Inventory</button>
-      </div>
-
-      <!-- Search and Category Filter -->
-      <div class="restock-search-filter">
-        <input type="text" id="manualUpdateSearchInput" class="restock-search-input" placeholder="🔍 Search products...">
-        <select id="manualUpdateCategoryFilter" class="restock-category-filter">
-          <option value="all">All Categories</option>
-          <!-- Categories will be populated dynamically -->
-        </select>
-      </div>
-
-      <!-- Date Display -->
-      <div class="manual-update-date-display">
+          <h2>Manual Inventory Update</h2>
+          <button id="backFromManualUpdateBtn" class="btn-back">← Back to Inventory</button>
+        </div>
+        <div class="restock-search-filter">
+          <input type="text" id="manualUpdateSearchInput" class="restock-search-input" placeholder="🔍 Search products...">
+          <select id="manualUpdateCategoryFilter" class="restock-category-filter">
+            <option value="all">All Categories</option>
+          </select>
+        </div>
+        <div class="manual-update-date-display">
           <span class="date-label">Editing sales for:</span>
           <span class="date-value" id="manualUpdateDateDisplay">January 26, 2026</span>
         </div>
-
-        <!-- Products List -->
-        <div class="manual-update-list" id="manualUpdateList">
-          <!-- Products will be inserted here -->
-        </div>
-
-        <!-- Save Button -->
+        <div class="manual-update-list" id="manualUpdateList"></div>
         <div class="manual-update-save-container">
           <button id="saveManualUpdatesBtn" class="btn-save-manual-updates">Save All Changes</button>
         </div>
@@ -324,8 +515,6 @@
           <h2>Laboratory Logbook</h2>
           <button class="btn-manage-lab-types" id="manageLabTypesBtn">Manage Lab Types</button>
         </div>
-
-        <!-- Add Patient Form -->
         <div class="add-patient-form">
           <h3>Record New Patient</h3>
           <div class="patient-form-grid">
@@ -333,22 +522,17 @@
               <label for="patientNameInput">Patient Name</label>
               <input type="text" id="patientNameInput" placeholder="Enter patient name" required>
             </div>
-            
             <div class="form-group">
               <label for="labTypeSelect">Laboratory Type</label>
               <select id="labTypeSelect" required>
                 <option value="">Select Lab Type</option>
-                <!-- Options will be populated from preset -->
               </select>
             </div>
-            
             <div class="form-group align-end">
               <button class="btn-add-patient" id="addPatientBtn">+ Add Patient</button>
             </div>
           </div>
         </div>
-
-        <!-- Patient Records Table -->
         <div class="patient-records-container">
           <h3>Patient Records</h3>
           <div class="table-wrapper">
@@ -363,9 +547,7 @@
                   <th>Assigned</th>
                 </tr>
               </thead>
-              <tbody id="patientRecordsBody">
-                <!-- Records will be inserted here -->
-              </tbody>
+              <tbody id="patientRecordsBody"></tbody>
             </table>
           </div>
         </div>
@@ -378,11 +560,7 @@
             <h2>Manage Laboratory Types</h2>
             <button class="modal-close" id="closeLabTypesModal">&times;</button>
           </div>
-          
-          <div class="lab-types-list" id="labTypesList">
-            <!-- Lab types will be inserted here -->
-          </div>
-          
+          <div class="lab-types-list" id="labTypesList"></div>
           <div class="add-lab-type-form">
             <input type="text" id="newLabTypeInput" placeholder="Enter new lab type...">
             <button id="addLabTypeBtn">+ Add Lab Type</button>
@@ -400,37 +578,28 @@
             <button class="sales-period-btn" data-period="year">This Year</button>
           </div>
         </div>
-
-        <!-- Summary Cards -->
         <div class="sales-summary-cards">
           <div class="sales-summary-card revenue">
             <div class="sales-summary-label">Total Revenue</div>
             <div class="sales-summary-value" id="salesTotalRevenue">₱0</div>
           </div>
-          
           <div class="sales-summary-card transactions">
             <div class="sales-summary-label">Transactions</div>
             <div class="sales-summary-value" id="salesTotalTransactions">0</div>
           </div>
-          
           <div class="sales-summary-card items">
             <div class="sales-summary-label">Items Sold</div>
             <div class="sales-summary-value" id="salesTotalItems">0</div>
           </div>
-          
           <div class="sales-summary-card average">
             <div class="sales-summary-label">Average Sale</div>
             <div class="sales-summary-value" id="salesAverageSale">₱0</div>
           </div>
         </div>
-
-        <!-- Search and Export -->
         <div class="sales-search-export">
           <input type="text" id="salesSearchInput" class="sales-search-input" placeholder="🔍 Search by patient name, nurse, or items...">
           <button id="exportSalesBtn" class="btn-export-sales">📊 Export to Excel</button>
         </div>
-
-        <!-- Sales Table -->
         <div class="sales-table-container">
           <table class="sales-table">
             <thead>
@@ -442,25 +611,18 @@
                 <th>Total</th>
               </tr>
             </thead>
-            <tbody id="salesTableBody">
-              <!-- Sales records will be inserted here -->
-            </tbody>
+            <tbody id="salesTableBody"></tbody>
           </table>
         </div>
-
-        <!-- Category Breakdown -->
         <div class="category-breakdown">
           <h3>Sales by Category</h3>
-          <div class="category-breakdown-grid" id="categoryBreakdownGrid">
-            <!-- Category breakdown will be inserted here -->
-          </div>
+          <div class="category-breakdown-grid" id="categoryBreakdownGrid"></div>
         </div>
       </div>
 
       <!-- === JOURNALS PAGE === -->
       <div class="page" id="journals">
         <div class="journal-responsive-layout">
-          <!-- Top: Header Info -->
           <div class="journal-header-compact">
             <div class="journal-nurse-info">
               <span id="journalNurseName">Mark Cruz</span>
@@ -468,51 +630,33 @@
             </div>
             <input type="text" id="journalPatientName" class="journal-patient-input-inline" placeholder="Patient Name">
           </div>
-
-          <!-- Middle: Current Items (collapsible/compact) -->
           <div class="journal-current-items-compact" id="journalItemsList">
             <div class="journal-empty-inline">No items • Tap category to start</div>
           </div>
-
-          <!-- Scrollable: Category/Product Selection -->
           <div class="journal-selection-scrollable">
             <div class="journal-selection-title-small" id="journalSelectionTitle">Select Category</div>
-            
-            <!-- Category Grid -->
             <div class="journal-grid-scrollable" id="journalCategoryGrid">
               <button class="journal-grid-btn" data-category="Medicine">
-                <span class="journal-grid-icon">💊</span>
-                <span>Medicine</span>
+                <span class="journal-grid-icon">💊</span><span>Medicine</span>
               </button>
               <button class="journal-grid-btn" data-category="PPE">
-                <span class="journal-grid-icon">😷</span>
-                <span>PPE</span>
+                <span class="journal-grid-icon">😷</span><span>PPE</span>
               </button>
               <button class="journal-grid-btn" data-category="Supplies">
-                <span class="journal-grid-icon">🩹</span>
-                <span>Supplies</span>
+                <span class="journal-grid-icon">🩹</span><span>Supplies</span>
               </button>
               <button class="journal-grid-btn" data-category="Equipment">
-                <span class="journal-grid-icon">🔬</span>
-                <span>Equipment</span>
+                <span class="journal-grid-icon">🔬</span><span>Equipment</span>
               </button>
               <button class="journal-grid-btn" data-category="Hygiene">
-                <span class="journal-grid-icon">🧼</span>
-                <span>Hygiene</span>
+                <span class="journal-grid-icon">🧼</span><span>Hygiene</span>
               </button>
               <button class="journal-grid-btn" data-category="Other">
-                <span class="journal-grid-icon">📦</span>
-                <span>Other</span>
+                <span class="journal-grid-icon">📦</span><span>Other</span>
               </button>
             </div>
-
-            <!-- Product Grid (Hidden by default) -->
-            <div class="journal-grid-scrollable journal-hidden" id="journalProductGrid">
-              <!-- Products will be dynamically loaded here -->
-            </div>
+            <div class="journal-grid-scrollable journal-hidden" id="journalProductGrid"></div>
           </div>
-
-          <!-- Fixed Bottom: Controls -->
           <div class="journal-fixed-bottom">
             <div class="journal-qty-row">
               <button class="journal-qty-btn-small" id="journalDecreaseQty">−</button>
@@ -528,9 +672,8 @@
         </div>
       </div>
 
-            <!-- === LEAVE MANAGEMENT SYSTEM === -->
+      <!-- === LEAVE MANAGEMENT SYSTEM === -->
       <div class="page" id="financials">
-        <!-- Leave Dashboard View (Default for Admin/Owner) -->
         <div class="leave-dashboard" id="leaveDashboard">
           <div class="leave-header">
             <h2>File Request</h2>
@@ -539,8 +682,6 @@
               <button class="btn-apply-leave" id="applyLeaveBtn">+ Apply Leave</button>
             </div>
           </div>
-
-          <!-- Leave Statistics Cards -->
           <div class="leave-stats">
             <div class="leave-stat-card pending-card">
               <div class="stat-icon">⏳</div>
@@ -549,7 +690,6 @@
                 <div class="stat-value" id="pendingCount">0</div>
               </div>
             </div>
-
             <div class="leave-stat-card active-card">
               <div class="stat-icon">🏖️</div>
               <div class="stat-content">
@@ -557,7 +697,6 @@
                 <div class="stat-value" id="activeLeaveCount">0</div>
               </div>
             </div>
-
             <div class="leave-stat-card approved-card">
               <div class="stat-icon">✅</div>
               <div class="stat-content">
@@ -565,7 +704,6 @@
                 <div class="stat-value" id="approvedCount">0</div>
               </div>
             </div>
-
             <div class="leave-stat-card rejected-card">
               <div class="stat-icon">❌</div>
               <div class="stat-content">
@@ -574,8 +712,6 @@
               </div>
             </div>
           </div>
-
-          <!-- Filter Tabs -->
           <div class="leave-tabs">
             <button class="leave-tab active" data-filter="pending">Pending</button>
             <button class="leave-tab" data-filter="active">Currently on Leave</button>
@@ -584,12 +720,8 @@
             <button class="leave-tab" data-filter="rejected">Rejected</button>
             <button class="leave-tab" data-filter="all">All Requests</button>
           </div>
-
-          <!-- Leave Requests List -->
           <div class="leave-requests-container">
-            <div id="leaveRequestsList" class="leave-requests-list">
-              <!-- Leave requests will be inserted here -->
-            </div>
+            <div id="leaveRequestsList" class="leave-requests-list"></div>
           </div>
         </div>
 
@@ -600,7 +732,6 @@
               <h2>Apply for Leave</h2>
               <button class="modal-close" id="closeApplyLeaveModal">&times;</button>
             </div>
-
             <form id="applyLeaveForm">
               <div class="form-group">
                 <label for="leaveType">Leave Type *</label>
@@ -610,31 +741,23 @@
                   <option value="Sick Leave">Sick Leave</option>
                 </select>
               </div>
-
               <div class="form-group">
                 <label for="leaveStartDate">Start Date *</label>
                 <input type="date" id="leaveStartDate" required>
               </div>
-
               <div class="form-group">
                 <label for="leaveEndDate">End Date *</label>
                 <input type="date" id="leaveEndDate" required>
               </div>
-
               <div class="form-group">
                 <label for="leaveDays">Number of Days</label>
                 <input type="number" id="leaveDays" readonly>
               </div>
-
               <div class="form-group">
                 <label for="leaveReason">Reason *</label>
                 <textarea id="leaveReason" rows="4" placeholder="Please provide reason for leave..." required></textarea>
               </div>
-
-              <div class="leave-balance-info" id="leaveBalanceInfo">
-                <!-- Balance info will be shown here -->
-              </div>
-
+              <div class="leave-balance-info" id="leaveBalanceInfo"></div>
               <div class="modal-actions">
                 <button type="button" class="btn-secondary" id="cancelApplyLeave">Cancel</button>
                 <button type="submit" class="btn-primary">Submit Application</button>
@@ -650,35 +773,29 @@
               <h2>Apply for Overtime</h2>
               <button class="modal-close" id="closeApplyOTModal">&times;</button>
             </div>
-
             <form id="applyOTForm">
               <div class="form-group">
                 <label for="otDate">Date *</label>
                 <input type="date" id="otDate" required>
               </div>
-
               <div class="form-group">
                 <label for="otTimeIn">Time In *</label>
                 <input type="time" id="otTimeIn" required>
               </div>
-
               <div class="form-group">
                 <label for="otTimeOut">Time Out *</label>
                 <input type="time" id="otTimeOut" required>
               </div>
-
               <div class="form-group">
                 <label>Total OT Hours</label>
                 <div class="ot-hours-display" id="otHoursDisplay">
                   <span class="hours-value">0.0</span> hours
                 </div>
               </div>
-
               <div class="form-group">
                 <label for="otReason">Reason for Overtime *</label>
                 <textarea id="otReason" rows="4" placeholder="Please provide reason for overtime work..." required></textarea>
               </div>
-
               <div class="modal-actions">
                 <button type="button" class="btn-secondary" id="cancelApplyOT">Cancel</button>
                 <button type="submit" class="btn-primary">Submit Application</button>
@@ -694,21 +811,14 @@
               <h2>Leave Request Details</h2>
               <button class="modal-close" id="closeViewLeaveModal">&times;</button>
             </div>
-
-            <div id="leaveDetailsContent">
-              <!-- Details will be inserted here -->
-            </div>
-
-            <div class="modal-actions" id="leaveActionButtons">
-              <!-- Action buttons will be inserted here based on status and role -->
-            </div>
+            <div id="leaveDetailsContent"></div>
+            <div class="modal-actions" id="leaveActionButtons"></div>
           </div>
         </div>
       </div>
 
       <!-- === PAYROLL PAGE === -->
       <div class="page" id="adjustments">
-        <!-- Mobile Not Supported Message -->
         <div class="mobile-not-supported">
           <div class="mobile-not-supported-icon">💻</div>
           <div class="mobile-not-supported-title">Desktop Only</div>
@@ -719,15 +829,12 @@
             Mobile support is not available for this feature.
           </div>
         </div>
-
         <div class="payroll-container">
-          <!-- Payroll Header -->
           <div class="payroll-header">
             <div class="payroll-title-row">
               <h1 class="payroll-title">Payroll Management System</h1>
               <div class="payroll-date" id="payrollCurrentDate">January 29, 2026</div>
             </div>
-
             <div class="payroll-controls">
               <div class="control-group">
                 <label class="control-label">Payroll Period</label>
@@ -736,7 +843,6 @@
                   <option value="2nd">2nd (30th)</option>
                 </select>
               </div>
-
               <div class="control-group">
                 <label class="control-label">Month</label>
                 <select class="control-select" id="payrollMonthSelect">
@@ -754,7 +860,6 @@
                   <option value="december">December</option>
                 </select>
               </div>
-
               <div class="control-group">
                 <label class="control-label">Year</label>
                 <select class="control-select" id="payrollYearSelect">
@@ -764,15 +869,12 @@
                 </select>
               </div>
             </div>
-
             <div class="payroll-action-buttons">
               <button class="payroll-btn payroll-btn-save" id="payrollSaveBtn" onclick="savePayrollData()">Save</button>
               <button class="payroll-btn payroll-btn-manage" onclick="openManageSettings()">Manage</button>
               <button class="payroll-btn payroll-btn-export" onclick="exportPayrollData()">Export</button>
             </div>
           </div>
-
-          <!-- Tabs Navigation -->
           <div class="payroll-tabs-container">
             <div class="payroll-tabs">
               <button class="payroll-tab active" onclick="switchPayrollTab('attendance')">Attendance</button>
@@ -780,7 +882,6 @@
               <button class="payroll-tab" onclick="switchPayrollTab('payroll')">Payroll</button>
               <button class="payroll-tab" onclick="switchPayrollTab('history')">History</button>
             </div>
-            
             <div class="payroll-sort-container">
               <select class="payroll-sort-select" id="payrollSortSelect" onchange="sortPayrollEmployees()">
                 <option value="name">Sort By: Name</option>
@@ -789,8 +890,6 @@
               </select>
             </div>
           </div>
-
-          <!-- Attendance Tab -->
           <div id="payrollAttendanceTab" class="payroll-tab-content active">
             <div id="payrollAttendanceContent">
               <div class="payroll-import-zone" id="payrollImportZone" 
@@ -806,15 +905,9 @@
               </div>
             </div>
           </div>
-
-          <!-- Over Time Tab -->
           <div id="payrollOvertimeTab" class="payroll-tab-content">
-            <div id="payrollOvertimeContent" class="ot-cards-grid">
-              <!-- OT content will be populated here -->
-            </div>
+            <div id="payrollOvertimeContent" class="ot-cards-grid"></div>
           </div>
-
-          <!-- Payroll Tab -->
           <div id="payrollPayrollTab" class="payroll-tab-content">
             <div id="payrollPayrollContent">
               <div class="payroll-import-zone" onclick="document.getElementById('payrollFileInput').click()"
@@ -829,8 +922,6 @@
               </div>
             </div>
           </div>
-
-          <!-- History Tab -->
           <div id="payrollHistoryTab" class="payroll-tab-content">
             <div id="payrollHistoryContent">
               <div class="payroll-import-zone">
@@ -846,7 +937,6 @@
       <!-- === PRINT PAGE === -->
       <div class="page" id="payslip">
         <div class="print-container">
-          <!-- Print Header with Connection Button -->
           <div class="print-header">
             <div>
               <h1 class="print-title">Print Documents</h1>
@@ -857,8 +947,6 @@
               <span class="connection-text" id="connectionText">Not Connected</span>
             </button>
           </div>
-
-          <!-- Import Zone -->
           <div class="print-import-zone" id="printImportZone" 
               onclick="document.getElementById('printFileInput').click()"
               ondragover="handlePrintDragOver(event)"
@@ -871,14 +959,9 @@
             <div class="print-import-subtitle">Drag and drop your Excel or PDF files, or click to browse</div>
             <div class="print-supported-formats">Supported: .xlsx, .xls, .pdf</div>
           </div>
-
-          <!-- Print Queue -->
           <div class="print-queue-section" id="printQueueSection" style="display: none;">
             <h3>Print Queue</h3>
-            <div class="print-queue-list" id="printQueueList">
-              <!-- Queue items will be inserted here -->
-            </div>
-            
+            <div class="print-queue-list" id="printQueueList"></div>
             <div class="print-actions">
               <button class="btn-clear-queue" onclick="clearPrintQueue()">Clear Queue</button>
               <button class="btn-print-all" onclick="printAllDocuments()">🖨️ Print All</button>
@@ -887,10 +970,9 @@
         </div>
       </div>
 
-            <!-- === PATIENT ASSIGNMENT PAGE === -->
+      <!-- === PATIENT ASSIGNMENT PAGE === -->
       <div class="page" id="reports">
         <div class="assignment-container">
-          <!-- Assignment Header -->
           <div class="assignment-header">
             <div>
               <h1 class="assignment-title">Patient Assignment</h1>
@@ -898,8 +980,6 @@
             </div>
             <div class="assignment-date" id="assignmentCurrentDate">January 30, 2026</div>
           </div>
-
-          <!-- Assignment Tabs -->
           <div class="assignment-tabs">
             <button class="assignment-tab active" data-filter="pending" onclick="switchAssignmentTab('pending')">
               Pending Assignments
@@ -914,32 +994,27 @@
               <span class="assignment-count" id="completedAssignmentCount">0</span>
             </button>
           </div>
-
-          <!-- Search Bar -->
           <div class="assignment-search">
             <input type="text" id="assignmentSearchInput" placeholder="🔍 Search by patient name or lab type..." />
           </div>
-
-          <!-- Pending Assignments List -->
-          <div class="assignment-list" id="assignmentList">
-            <!-- Assignment cards will be inserted here -->
-          </div>
+          <div class="assignment-list" id="assignmentList"></div>
         </div>
       </div>
 
       <!-- === SETTINGS PAGE === -->
-<div class="page" id="settings">
-  <div class="under-development-container">
-    <div class="under-development-icon">🚧</div>
-    <h1 class="under-development-title">Under Development</h1>
-    <p class="under-development-message">
-      This feature is currently being developed.
-    </p>
-  </div>
-</div>
+      <div class="page" id="settings">
+        <div class="under-development-container">
+          <div class="under-development-icon">🚧</div>
+          <h1 class="under-development-title">Under Development</h1>
+          <p class="under-development-message">This feature is currently being developed.</p>
+        </div>
+      </div>
+    </main>
+  </div><!-- end #appWrapper -->
 
-      
-      
+  <!-- ============================================================
+       MODALS (outside appWrapper so they layer correctly)
+       ============================================================ -->
 
   <!-- Payroll Manage Settings Modal -->
   <div class="payroll-manage-modal" id="payrollManageModal">
@@ -948,42 +1023,21 @@
         <h2>Manage Payroll Settings</h2>
         <button class="payroll-manage-close" onclick="closeManageSettings()">×</button>
       </div>
-
-      <!-- Tabs for different settings -->
       <div class="manage-tabs" style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem; border-bottom: 2px solid #e5e7eb;">
-        <button class="manage-tab-btn active" onclick="switchManageTab('departments')" data-tab="departments">
-          👥 Departments
-        </button>
-        <button class="manage-tab-btn" onclick="switchManageTab('presets')" data-tab="presets">
-          ⏰ Time Presets
-        </button>
+        <button class="manage-tab-btn active" onclick="switchManageTab('departments')" data-tab="departments">👥 Departments</button>
+        <button class="manage-tab-btn" onclick="switchManageTab('presets')" data-tab="presets">⏰ Time Presets</button>
       </div>
-
-      <!-- Departments Tab -->
       <div id="manageDepartmentsTab" class="manage-tab-content active">
         <div style="margin-bottom: 1rem;">
-          <p style="color: #6b7280; font-size: 0.9rem; margin: 0;">
-            Assign and manage employee departments. Changes will be reflected throughout the payroll system.
-          </p>
+          <p style="color: #6b7280; font-size: 0.9rem; margin: 0;">Assign and manage employee departments. Changes will be reflected throughout the payroll system.</p>
         </div>
-        
-        <div id="employeeDepartmentList" style="max-height: 400px; overflow-y: auto;">
-          <!-- Employee list will be populated here -->
-        </div>
+        <div id="employeeDepartmentList" style="max-height: 400px; overflow-y: auto;"></div>
       </div>
-
-      <!-- Time Presets Tab -->
       <div id="managePresetsTab" class="manage-tab-content" style="display: none;">
         <div style="margin-bottom: 1rem;">
-          <p style="color: #6b7280; font-size: 0.9rem; margin: 0;">
-            Manage required time presets for attendance tracking.
-          </p>
+          <p style="color: #6b7280; font-size: 0.9rem; margin: 0;">Manage required time presets for attendance tracking.</p>
         </div>
-        
-        <div class="preset-list" id="presetList">
-          <!-- Presets will be populated here -->
-        </div>
-
+        <div class="preset-list" id="presetList"></div>
         <button class="btn-preset-add" onclick="addNewPreset()">+ Add New Preset</button>
       </div>
     </div>
@@ -1007,9 +1061,7 @@
             <select id="productCategory" required style="flex: 1;">
               <option value="">Select Category</option>
             </select>
-            <button type="button" id="manageCategoriesBtn" style="padding: 0.6rem; border: 1px solid #d1d5db; background: white; color: #374151; border-radius: 6px; cursor: pointer; white-space: nowrap;">
-              Manage
-            </button>
+            <button type="button" id="manageCategoriesBtn" style="padding: 0.6rem; border: 1px solid #d1d5db; background: white; color: #374151; border-radius: 6px; cursor: pointer; white-space: nowrap;">Manage</button>
           </div>
         </div>
         <div class="form-group">
@@ -1020,7 +1072,6 @@
           <label for="productPrice">Price</label>
           <input type="number" id="productPrice" step="0.01" required>
         </div>
-
         <div class="form-group">
           <label for="productExpiry">Expiry</label>
           <input type="date" id="productExpiry" required>
@@ -1052,11 +1103,7 @@
         <h2>Manage Categories</h2>
         <button class="modal-close" id="closeCategoryModal">&times;</button>
       </div>
-      
-      <div class="category-list" id="categoryList">
-        <!-- Categories will be inserted here -->
-      </div>
-      
+      <div class="category-list" id="categoryList"></div>
       <div class="category-bottom-actions">
         <input type="text" id="newCategoryInput" placeholder="Enter new category name...">
         <button id="saveCategoriesBtn" class="btn-save-all">💾 Save</button>
@@ -1072,11 +1119,7 @@
         <h2 id="stockDetailTitle">Stock Details</h2>
         <button class="modal-close" id="closeStockDetailModal">&times;</button>
       </div>
-      
-      <div id="stockDetailBody" style="max-height: 60vh; overflow-y: auto;">
-        <!-- Stock details will be inserted here -->
-      </div>
-      
+      <div id="stockDetailBody" style="max-height: 60vh; overflow-y: auto;"></div>
       <div class="form-actions" style="margin-top: 1.5rem;">
         <button type="button" class="btn-cancel" id="closeStockDetailBtn">Close</button>
       </div>
@@ -1103,14 +1146,10 @@
         <h2>Receipt Preview</h2>
         <button class="modal-close" id="closeJournalPreviewModal">&times;</button>
       </div>
-      <div id="journalPreviewModalBody" style="max-height: 60vh; overflow-y: auto; padding: 1.25rem;">
-        <!-- Receipt preview will be shown here -->
-      </div>
+      <div id="journalPreviewModalBody" style="max-height: 60vh; overflow-y: auto; padding: 1.25rem;"></div>
     </div>
   </div>
 
-
-
-<script src="app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
